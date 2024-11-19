@@ -663,4 +663,4 @@ async def doors(ctx, amount: int):
 
 
 # Run the bot
-bot.run('MTMwNzM5MDgyMzAwODMwOTI5OA.GtAd71.db8fn3jPDY06OTlf47yFVuDzyMJnaJNqB2BJvE')
+bot.run('#YOUR TOKEN')
