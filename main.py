@@ -78,20 +78,49 @@ async def balance(ctx):
         f"{ctx.author.mention}, your balance is {user_data['balance']} coins. "
         f"Debt: {user_data['loan']} coins."
     )
-
 @bot.command(name="loan", help="Apply for a loan.")
 async def loan(ctx, amount: int):
     user_data = get_user_data(ctx.author.id)
+    item_prices = {
+        "Rolex": 5000,
+        "Lambo": 130000,
+        "Porsche": 100000,
+        "Apartment": 200000,
+        "Penthouse": 1000000,
+        "JetSki": 15000,
+        "PrivateIsland": 5000000,
+        "Helicopter": 800000,
+        "Superyacht": 7500000,
+        "Diamond Ring": 10000,
+        "SpaceShuttle": 20000000,
+        "Hooker": 50000,
+        "SecurityTeam": 9000000,
+        "PrivateJet": 3000000,
+        "Castle": 15000000
+    }
+
+    # Check if the user already has a loan
     if user_data["loan"] > 0:
         await ctx.send(f"{ctx.author.mention}, you must repay your current loan first!")
         return
-    if amount > 5000:
-        await ctx.send(f"{ctx.author.mention}, the maximum loan amount is 5000 coins.")
+
+    # Get user balance and assets
+    balance = user_data.get("balance", 0)
+    assets_value = sum(item_prices.get(item, 0) for item in user_data.get("items", []))  # Calculate total asset value
+
+    # Determine maximum loan amount
+    max_loan = max(5000, assets_value) if balance < 5000 else assets_value
+    if amount > max_loan:
+        await ctx.send(f"{ctx.author.mention}, you can only take a loan up to {max_loan} coins.")
         return
+
+    # Update balance and loan with 100% interest
     user_data["balance"] += amount
     user_data["loan"] = amount * 2  # 100% interest
     update_user_data(ctx.author.id, user_data["balance"], user_data["loan"])
+
     await ctx.send(f"{ctx.author.mention}, loan approved! Balance: {user_data['balance']}, Debt: {user_data['loan']}.")
+
 
 @bot.command(name="repay", help="Repay your loan.")
 async def repay(ctx, amount: int):
@@ -284,7 +313,9 @@ async def send(ctx, recipient: discord.User, amount: int):
 
     # Fetch sender data
     sender_data = get_user_data(sender_id)
-    
+    if sender_data["loan"] > 0:
+        await ctx.send(f"{ctx.author.mention}, you must repay your current loan first!")
+        return
     if amount <= 0:
         await ctx.send(f"{ctx.author.mention}, you can't send a negative or zero amount.")
         return
@@ -334,11 +365,21 @@ async def strip(ctx):
         
         
 SHOP_ITEMS = {
-    'Rolex': 5000,
-    'Lambo': 130000,
-    'Porsche': 100000,
-    'Apartment': 200000,
-    'Penthouse': 1000000
+    "⌚ Rolex": 5000,
+    "🏎️ Lambo": 130000,
+    "🚘 Porsche": 100000,
+    "🏢 Apartment": 200000,
+    "🌆 Penthouse": 1000000,
+    "🛥️ JetSki": 15000,
+    "🏝️ PrivateIsland": 5000000,
+    "🚁 Helicopter": 800000,
+    "🛳️ Superyacht": 7500000,
+    "💍 DiamondRing": 10000,
+    "🚀 SpaceShuttle": 20000000,
+    "💃 Hooker": 50000,
+    "🛡️ SecurityTeam": 9000000,
+    "✈️ PrivateJet": 3000000,
+    "🏰 Castle": 15000000
 }
 @bot.command(name='buy', help='Purchase an item from the shop.')
 async def buy(ctx, item: str):
@@ -351,7 +392,17 @@ async def buy(ctx, item: str):
         "Lambo": 130000,
         "Porsche": 100000,
         "Apartment": 200000,
-        "Pent house": 1000000
+        "Penthouse": 1000000,
+        "JetSki": 15000,
+        "PrivateIsland": 5000000,
+        "Helicopter": 800000,
+        "Superyacht": 7500000,
+        "Diamond Ring": 10000,
+        "SpaceShuttle": 20000000,
+        "Hooker": 50000,
+        "SecurityTeam": 9000000,
+        "PrivateJet": 3000000,
+        "Castle": 15000000
     }
 
     # Check if the item exists in the shop
@@ -388,7 +439,17 @@ async def sell(ctx, item: str):
         "Lambo": 130000,
         "Porsche": 100000,
         "Apartment": 200000,
-        "Pent house": 1000000
+        "Penthouse": 1000000,
+        "JetSki": 15000,
+        "PrivateIsland": 5000000,
+        "Helicopter": 800000,
+        "Superyacht": 7500000,
+        "Diamond Ring": 10000,
+        "SpaceShuttle": 20000000,
+        "Hooker": 50000,
+        "SecurityTeam": 9000000,
+        "PrivateJet": 3000000,
+        "Castle": 15000000
     }
 
     # Validate user data structure
@@ -453,9 +514,153 @@ async def commands_list(ctx):
     - !inventory: Check inventory
     - !buy: Buy things
     - !sell: Sell things to afford your addiction
+    - !doors <amount>: Choose a door and gamble
     - !current_bet: Check the status of the current bet.
     """
     await ctx.send(commands)
+# Helper function for Mines game
+def generate_grid(size, mines):
+    grid = ['0'] * (size * size)  # 5x5 grid flattened
+    mine_positions = random.sample(range(size * size), mines)
+    for mine in mine_positions:
+        grid[mine] = '💣'  # Marking mines
+    return grid
 
-# ENTER YOUR TOKEN HERE
-bot.run('')
+def display_grid(grid, revealed_tiles):
+    display = ""
+    for i in range(5):  # 5x5 grid
+        display += " ".join(
+            [grid[i*5 + j] if (i*5 + j) in revealed_tiles else '⬛' for j in range(5)]
+        ) + "\n"
+    return display
+
+@bot.command(name="mines", help="Play a game of Mines.")
+async def mines(ctx, bet: int, num_mines: int):
+    user_id = ctx.author.id
+
+    # Get the user data and check balance
+    user_data = get_user_data(user_id)
+    if user_data["balance"] < bet:
+        await ctx.send(f"{ctx.author.mention}, you don't have enough balance to play this game!")
+        return
+
+    # Deduct the bet from the user's balance
+    user_data["balance"] -= bet
+    update_user_data(user_id, balance=user_data["balance"])
+
+    # Generate the grid with mines
+    grid = generate_grid(5, num_mines)
+    revealed_tiles = set()  # Keep track of revealed tiles
+
+    # Send the grid to the user and add reactions
+    grid_message = await ctx.send(f"**Mines Game!**\nYour bet: {bet} 💸\n{display_grid(grid, revealed_tiles)}\nReact with the numbers (1-25) to reveal tiles!")
+
+    # Add reactions for clicking the grid (1-25)
+    for i in range(1, 26):
+        await grid_message.add_reaction(str(i))
+
+    def check(reaction, user):
+        return user == ctx.author and str(reaction.emoji) in [str(i) for i in range(1, 26)]
+
+    # Game loop
+    while True:
+        try:
+            reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
+
+            # Get the tile number from the emoji
+            tile_num = int(reaction.emoji) - 1
+            if tile_num in revealed_tiles:
+                await ctx.send(f"{ctx.author.mention}, this tile has already been revealed.")
+                continue
+
+            # Reveal the tile
+            revealed_tiles.add(tile_num)
+            if grid[tile_num] == '💣':
+                # User clicked on a mine, game over
+                await ctx.send(f"{ctx.author.mention}, you hit a mine! You lost your bet of {bet} 💸.")
+                update_user_data(user_id, balance=user_data["balance"] - bet)  # Subtract the bet from the user's balance
+                break
+            else:
+                # Display the updated grid
+                updated_grid = grid[:]
+                for idx in revealed_tiles:
+                    updated_grid[idx] = '✅'  # Mark revealed tiles with a check mark
+
+                updated_grid_display = display_grid(updated_grid, revealed_tiles)
+                await grid_message.edit(content=f"**Mines Game!**\nYour bet: {bet} 💸\n{updated_grid_display}\nReact with the numbers (1-25) to reveal more tiles!")
+
+        except asyncio.TimeoutError:
+            await ctx.send(f"{ctx.author.mention}, the game timed out!")
+            break
+
+        except Exception as e:
+            await ctx.send(f"An error occurred: {str(e)}")
+            break
+import random
+import asyncio
+
+@bot.command(name="doors", help="Choose a door to find the money! Usage: !doors <amount>")
+async def doors(ctx, amount: int):
+    user_id = ctx.author.id
+    user_data = get_user_data(user_id)
+    
+    # Validate the bet amount
+    if amount <= 0:
+        await ctx.send(f"{ctx.author.mention}, please enter a valid bet amount!")
+        return
+
+    if amount > user_data["balance"]:
+        await ctx.send(f"{ctx.author.mention}, you don't have enough balance to place this bet.")
+        return
+
+    # Deduct the bet amount
+    user_data["balance"] -= amount
+    update_user_data(user_id, user_data["balance"])
+
+    # Randomly choose the winning door
+    winning_door = random.choice(["🟦", "🟨", "🟥"])
+    doors = ["🟦", "🟨", "🟥"]
+
+    # Send the game message
+    message = await ctx.send(
+        f"{ctx.author.mention}, \n Pick a door! \n React with one of the emojis: 🟦 🟨 🟥\n\n"
+        f"Bet amount: {amount}"
+    )
+
+    # Add reactions for the doors
+    for door in doors:
+        await message.add_reaction(door)
+
+    # Wait for the user's reaction
+    def check(reaction, user):
+        return (
+            user == ctx.author
+            and str(reaction.emoji) in doors
+            and reaction.message.id == message.id
+        )
+
+    try:
+        reaction, _ = await bot.wait_for("reaction_add", timeout=30.0, check=check)
+    except asyncio.TimeoutError:
+        await ctx.send(f"{ctx.author.mention}, you took too long to choose a door!")
+        return
+
+    # Evaluate the result
+    chosen_door = str(reaction.emoji)
+    if chosen_door == winning_door:
+        multiplier = random.randint(2, 4)  # Payout multiplier
+        winnings = amount * multiplier
+        user_data["balance"] += winnings  # Add winnings to balance
+        result = f"You won {winnings} coins! (Multiplier: x{multiplier})"
+    else:
+        result = "You lost! The money was behind another door."
+
+    # Save the updated user data
+    update_user_data(user_id, user_data["balance"]) 
+
+    # Send the result
+    await ctx.send(f"{ctx.author.mention}, {' | '.join([str(reaction.emoji)])} - {result} Balance: {user_data['balance']} coins.")
+
+
+# Run the bot
+bot.run('MTMwNzM5MDgyMzAwODMwOTI5OA.GtAd71.db8fn3jPDY06OTlf47yFVuDzyMJnaJNqB2BJvE')
